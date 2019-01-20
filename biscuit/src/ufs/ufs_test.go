@@ -2,17 +2,9 @@ package ufs
 
 import "testing"
 import "fmt"
-//import "io"
-//import "os"
 import "strconv"
-//import "sync"
 import "time"
-
-//import "bpath"
-//import "defs"
-//import "fd"
-//import "fs"
-//import "mem"
+import "vm"
 import "ustr"
 
 const (
@@ -30,19 +22,28 @@ func uniqdir(id int) string {
 	return "d" + strconv.Itoa(id)
 }
 
-func doTestSimple(tfs *Ufs_t, d ustr.Ustr) {
-	ub := mkData(1, 11)
-	tfs.MkDir(d)
-	tfs.MkFile(d.ExtendStr("f1"), ub)
-	tfs.MkFile(d.ExtendStr("f2"), ub)
-	//tfs.MkDir(d.ExtendStr("d0"))
-	//tfs.MkDir(d.ExtendStr("d0/d1"))
-	//tfs.Append(d.ExtendStr("f1"), ub)
-	tfs.Unlink(d.ExtendStr("f2"))
-	tfs.Unlink(d.ExtendStr("f1"))
-	//tfs.Unlink(d.ExtendStr("d0/d1"))
-	//tfs.Unlink(d.ExtendStr("d0"))
-	tfs.Unlink(d)
+func doTestSimple(tfs *Ufs_t, d ustr.Ustr, ub *vm.Fakeubuf_t) string {
+	fmt.Printf("mkfile1\n")
+	e := tfs.MkFile(d.ExtendStr("f1"), ub)
+	if e != 0 {
+		return fmt.Sprintf("mkFile %v failed", "f1")
+	}
+	fmt.Printf("mkfile2\n")
+	e = tfs.MkFile(d.ExtendStr("f2"), ub)
+	if e != 0 {
+		return fmt.Sprintf("mkFile %v failed", "f2")
+	}
+	fmt.Printf("unlink2\n")
+	e = tfs.Unlink(d.ExtendStr("f2"))
+	if e != 0 {
+		return fmt.Sprintf("unlink %v failed", "f2")
+	}
+	fmt.Printf("unlink1\n")
+	e = tfs.Unlink(d.ExtendStr("f1"))
+	if e != 0 {
+		return fmt.Sprintf("unlink %v failed", "f1")
+	}
+	return ""
 }
 
 func concurrent(t *testing.T) {
@@ -57,9 +58,13 @@ func concurrent(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(id int) {
 			iter := 0
+			d := ustr.Ustr(uniqdir(id))
+			ub := mkData(1, 11)
+			tfs.MkDir(d)
+
 			for !STOP {
-				d := ustr.Ustr(uniqdir(id+(iter*n)))
-				doTestSimple(tfs, d)
+				res := doTestSimple(tfs, d, ub)
+				fmt.Printf("test %d: %v\n", iter, res)
 				tfs.Sync()
 				iter++
 			}
@@ -70,15 +75,15 @@ func concurrent(t *testing.T) {
 		time.Sleep(2*time.Second)
 		STOP = true
 		stop = time.Now()
-		fmt.Printf("Timer Thread Done")
+		fmt.Printf("Timer Thread Done\n")
 		c <- 0
 	}()
 	s := 0
 	for i := 0; i < n+1; i++ {
 		s += <-c
-		fmt.Printf("Got %d tests from %d threads", s, i)
+		fmt.Printf("Got %d tests from %d threads\n", s, i)
 	}
-	fmt.Printf("Did %d tests in %v seconds", s, stop.Sub(start));
+	fmt.Printf("Did %d tests in %v seconds\n", s, stop.Sub(start));
 	ShutdownFS(tfs)
 }
 
