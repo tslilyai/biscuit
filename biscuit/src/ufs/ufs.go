@@ -62,13 +62,14 @@ func (ufs *Ufs_t) MkFile(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
 	if err != 0 {
 		return err
 	}
-	if ub != nil {
+	/*if ub != nil {
+		fmt.Printf("writing %v", ub);
 		_, err := fd.Fops.Write(ub)
 		if err != 0 || ub.Remain() != 0 {
 			fd.Fops.Close()
 			return err
 		}
-	}
+	}*/
 	err = fd.Fops.Close()
 	if err != 0 {
 		return err
