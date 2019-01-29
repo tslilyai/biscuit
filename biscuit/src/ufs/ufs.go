@@ -18,7 +18,6 @@ import "vm"
 type Ufs_t struct {
 	ahci *ahci_disk_t
 	fs   *fs.Fs_t
-	cwd  *fd.Cwd_t
 }
 
 func mkData(v uint8, n int) *vm.Fakeubuf_t {
@@ -57,18 +56,19 @@ func (ufs *Ufs_t) SyncApply() defs.Err_t {
 	return err
 }
 
-func (ufs *Ufs_t) MkFile(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
-	fd, err := ufs.fs.Fs_open(p, defs.O_CREAT, 0, ufs.cwd, 0, 0)
+func (ufs *Ufs_t) MkFile(p ustr.Ustr, ub *vm.Fakeubuf_t, cwd *fd.Cwd_t) defs.Err_t {
+	fd, err := ufs.fs.Fs_open(p, defs.O_CREAT, 0, cwd, 0, 0)
 	if err != 0 {
 		return err
 	}
-	if ub != nil {
+	/*if ub != nil {
+		fmt.Printf("writing %v", ub);
 		_, err := fd.Fops.Write(ub)
 		if err != 0 || ub.Remain() != 0 {
 			fd.Fops.Close()
 			return err
 		}
-	}
+	}*/
 	err = fd.Fops.Close()
 	if err != 0 {
 		return err
@@ -76,22 +76,34 @@ func (ufs *Ufs_t) MkFile(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
 	return err
 }
 
-func (ufs *Ufs_t) MkDir(p ustr.Ustr) defs.Err_t {
-	err := ufs.fs.Fs_mkdir(p, 0755, ufs.cwd)
+func (ufs *Ufs_t) MkDir(p ustr.Ustr, cwd *fd.Cwd_t) defs.Err_t {
+	err := ufs.fs.Fs_mkdir(p, 0755, cwd)
 	if err != 0 {
 		return err
 	}
 	return err
 }
 
-func (ufs *Ufs_t) Rename(oldp, newp ustr.Ustr) defs.Err_t {
-	err := ufs.fs.Fs_rename(oldp, newp, ufs.cwd)
+func (ufs *Ufs_t) ChDir(p ustr.Ustr) (*fd.Cwd_t, defs.Err_t) {
+	cwd := ufs.fs.MkRootCwd()
+	newfd, err := ufs.fs.Fs_open(p, defs.O_RDONLY|defs.O_DIRECTORY, 0, cwd, 0, 0)
+	if err != 0 {
+		return nil, err
+	}
+	//fd.Close_panic(cwd.Fd)
+	cwd.Fd = newfd
+	cwd.Path = cwd.Canonicalpath(p)
+	return cwd, err
+}
+
+func (ufs *Ufs_t) Rename(oldp, newp ustr.Ustr, cwd *fd.Cwd_t) defs.Err_t {
+	err := ufs.fs.Fs_rename(oldp, newp, cwd)
 	return err
 }
 
 // update (XXX check that ub < len(file)?)
-func (ufs *Ufs_t) Update(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
-	fd, err := ufs.fs.Fs_open(p, defs.O_RDWR, 0, ufs.cwd, 0, 0)
+func (ufs *Ufs_t) Update(p ustr.Ustr, ub *vm.Fakeubuf_t, cwd *fd.Cwd_t) defs.Err_t {
+	fd, err := ufs.fs.Fs_open(p, defs.O_RDWR, 0, cwd, 0, 0)
 	if err != 0 {
 		return err
 	}
@@ -107,8 +119,8 @@ func (ufs *Ufs_t) Update(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
 	return err
 }
 
-func (ufs *Ufs_t) Append(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
-	fd, err := ufs.fs.Fs_open(p, defs.O_RDWR, 0, ufs.cwd, 0, 0)
+func (ufs *Ufs_t) Append(p ustr.Ustr, ub *vm.Fakeubuf_t, cwd *fd.Cwd_t) defs.Err_t {
+	fd, err := ufs.fs.Fs_open(p, defs.O_RDWR, 0, cwd, 0, 0)
 	if err != 0 {
 		return err
 	}
@@ -130,37 +142,37 @@ func (ufs *Ufs_t) Append(p ustr.Ustr, ub *vm.Fakeubuf_t) defs.Err_t {
 	return err
 }
 
-func (ufs *Ufs_t) Unlink(p ustr.Ustr) defs.Err_t {
-	err := ufs.fs.Fs_unlink(p, ufs.cwd, false)
+func (ufs *Ufs_t) Unlink(p ustr.Ustr, cwd *fd.Cwd_t) defs.Err_t {
+	err := ufs.fs.Fs_unlink(p, cwd, false)
 	if err != 0 {
 		return err
 	}
 	return err
 }
 
-func (ufs *Ufs_t) UnlinkDir(p ustr.Ustr) defs.Err_t {
-	err := ufs.fs.Fs_unlink(p, ufs.cwd, true)
+func (ufs *Ufs_t) UnlinkDir(p ustr.Ustr, cwd *fd.Cwd_t) defs.Err_t {
+	err := ufs.fs.Fs_unlink(p, cwd, true)
 	if err != 0 {
 		return err
 	}
 	return err
 }
 
-func (ufs *Ufs_t) Stat(p ustr.Ustr) (*stat.Stat_t, defs.Err_t) {
+func (ufs *Ufs_t) Stat(p ustr.Ustr, cwd *fd.Cwd_t) (*stat.Stat_t, defs.Err_t) {
 	s := &stat.Stat_t{}
-	err := ufs.fs.Fs_stat(p, s, ufs.cwd)
+	err := ufs.fs.Fs_stat(p, s, cwd)
 	if err != 0 {
 		return nil, err
 	}
 	return s, err
 }
 
-func (ufs *Ufs_t) Read(p ustr.Ustr) ([]byte, defs.Err_t) {
-	st, err := ufs.Stat(p)
+func (ufs *Ufs_t) Read(p ustr.Ustr, cwd *fd.Cwd_t) ([]byte, defs.Err_t) {
+	st, err := ufs.Stat(p, cwd)
 	if err != 0 {
 		return nil, err
 	}
-	fd, err := ufs.fs.Fs_open(p, defs.O_RDONLY, 0, ufs.cwd, 0, 0)
+	fd, err := ufs.fs.Fs_open(p, defs.O_RDONLY, 0, cwd, 0, 0)
 	if err != 0 {
 		return nil, err
 	}
@@ -181,9 +193,9 @@ func (ufs *Ufs_t) Read(p ustr.Ustr) ([]byte, defs.Err_t) {
 	return v, err
 }
 
-func (ufs *Ufs_t) Ls(p ustr.Ustr) (map[string]*stat.Stat_t, defs.Err_t) {
+func (ufs *Ufs_t) Ls(p ustr.Ustr, cwd *fd.Cwd_t) (map[string]*stat.Stat_t, defs.Err_t) {
 	res := make(map[string]*stat.Stat_t, 100)
-	d, e := ufs.Read(p)
+	d, e := ufs.Read(p, cwd)
 	if e != 0 {
 		return nil, e
 	}
@@ -193,7 +205,7 @@ func (ufs *Ufs_t) Ls(p ustr.Ustr) (map[string]*stat.Stat_t, defs.Err_t) {
 			tfn := dd.Filename(j)
 			if len(tfn) > 0 {
 				f := p.Extend(tfn)
-				st, e := ufs.Stat(f)
+				st, e := ufs.Stat(f, cwd)
 				if e != 0 {
 					return nil, e
 				}
@@ -230,7 +242,6 @@ func BootFS(dst string) *Ufs_t {
 	log.Printf("reboot %v ...\n", dst)
 	ufs := &Ufs_t{}
 	ufs.ahci = openDisk(dst)
-	ufs.cwd = ufs.fs.MkRootCwd()
 	_, ufs.fs = fs.StartFS(blockmem, ufs.ahci, c, true)
 	return ufs
 }
@@ -239,7 +250,6 @@ func BootMemFS(dst string) *Ufs_t {
 	log.Printf("reboot %v ...\n", dst)
 	ufs := &Ufs_t{}
 	ufs.ahci = openDisk(dst)
-	ufs.cwd = ufs.fs.MkRootCwd()
 	_, ufs.fs = fs.StartFS(blockmem, ufs.ahci, c, false)
 	return ufs
 }
